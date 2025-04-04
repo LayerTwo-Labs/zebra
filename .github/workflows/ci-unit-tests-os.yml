@@ -124,7 +124,7 @@ jobs:
       # If some tests hang, add "-- --nocapture" for just that test, or for all the tests.
       - name: Run tests${{ matrix.features }}
         run: |
-          cargo test --features "${{ matrix.features }}" --release --verbose --workspace
+          cargo test --features "${{ matrix.features }}" --release --workspace
 
       # Explicitly run any tests that are usually #[ignored]
 
@@ -132,7 +132,7 @@ jobs:
         # Skip the entire step on Ubuntu and Windows, because the test would be skipped anyway due to ZEBRA_SKIP_NETWORK_TESTS
         if: matrix.os == 'macos-latest'
         run: |
-          cargo test --features "${{ matrix.features }}" --release --verbose --package zebrad --test acceptance -- --nocapture --include-ignored sync_large_checkpoints_
+          cargo test --features "${{ matrix.features }}" --release --package zebrad --test acceptance -- --nocapture --include-ignored sync_large_checkpoints_
 
   # Install Zebra with lockfile dependencies, with no caching and default features
   install-from-lockfile-no-cache:
