@@ -113,8 +113,7 @@ jobs:
     timeout-minutes: 90
     needs: [ matrix, check-matrix ]
     # Some of these builds take more than 14GB disk space
-    # TODO: will this crash?
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-large
     strategy:
       # avoid rate-limit errors by only launching a few of these jobs at a time,
       # but still finish in a similar time to the longest tests
