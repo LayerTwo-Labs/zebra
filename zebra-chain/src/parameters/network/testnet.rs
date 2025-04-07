@@ -297,6 +297,8 @@ pub struct ParametersBuilder {
     target_difficulty_limit: ExpandedDifficulty,
     /// A flag for disabling proof-of-work checks when Zebra is validating blocks
     disable_pow: bool,
+    /// A flag for disabling block subsidies for this network
+    disable_subsidy: bool,
     /// Whether to allow transactions with transparent outputs to spend coinbase outputs,
     /// similar to `fCoinbaseMustBeShielded` in zcashd.
     should_allow_unshielded_coinbase_spends: bool,
@@ -334,6 +336,7 @@ impl Default for ParametersBuilder {
                 .to_expanded()
                 .expect("difficulty limits are valid expanded values"),
             disable_pow: false,
+            disable_subsidy: false,
             pre_nu6_funding_streams: PRE_NU6_FUNDING_STREAMS_TESTNET.clone(),
             post_nu6_funding_streams: POST_NU6_FUNDING_STREAMS_TESTNET.clone(),
             should_lock_funding_stream_address_period: false,
@@ -508,6 +511,12 @@ impl ParametersBuilder {
         self
     }
 
+    /// Sets the `disable_subsidy` flag to be used in the [`Parameters`] being built.
+    pub fn with_disable_subsidy(mut self, disable_subsidy: bool) -> Self {
+        self.disable_subsidy = disable_subsidy;
+        self
+    }
+
     /// Sets the `disable_pow` flag to be used in the [`Parameters`] being built.
     pub fn with_unshielded_coinbase_spends(
         mut self,
@@ -542,6 +551,7 @@ impl ParametersBuilder {
             should_lock_funding_stream_address_period: _,
             target_difficulty_limit,
             disable_pow,
+            disable_subsidy,
             should_allow_unshielded_coinbase_spends,
             pre_blossom_halving_interval,
             post_blossom_halving_interval,
@@ -557,6 +567,7 @@ impl ParametersBuilder {
             post_nu6_funding_streams,
             target_difficulty_limit,
             disable_pow,
+            disable_subsidy,
             should_allow_unshielded_coinbase_spends,
             pre_blossom_halving_interval,
             post_blossom_halving_interval,
@@ -596,6 +607,7 @@ impl ParametersBuilder {
             should_lock_funding_stream_address_period: _,
             target_difficulty_limit,
             disable_pow,
+            disable_subsidy,
             should_allow_unshielded_coinbase_spends,
             pre_blossom_halving_interval,
             post_blossom_halving_interval,
@@ -609,6 +621,7 @@ impl ParametersBuilder {
             && self.post_nu6_funding_streams == post_nu6_funding_streams
             && self.target_difficulty_limit == target_difficulty_limit
             && self.disable_pow == disable_pow
+            && self.disable_subsidy == disable_subsidy
             && self.should_allow_unshielded_coinbase_spends
                 == should_allow_unshielded_coinbase_spends
             && self.pre_blossom_halving_interval == pre_blossom_halving_interval
@@ -643,6 +656,8 @@ pub struct Parameters {
     target_difficulty_limit: ExpandedDifficulty,
     /// A flag for disabling proof-of-work checks when Zebra is validating blocks
     disable_pow: bool,
+    /// A flag for disabling block subsidies for this network
+    disable_subsidy: bool,
     /// Whether to allow transactions with transparent outputs to spend coinbase outputs,
     /// similar to `fCoinbaseMustBeShielded` in zcashd.
     should_allow_unshielded_coinbase_spends: bool,
@@ -683,6 +698,7 @@ impl Parameters {
             // This value is chosen to match zcashd, see: <https://github.com/zcash/zcash/blob/master/src/chainparams.cpp#L654>
             .with_target_difficulty_limit(U256::from_big_endian(&[0x0f; 32]))
             .with_disable_pow(true)
+            .with_disable_subsidy(true)
             .with_unshielded_coinbase_spends(true)
             .with_slow_start_interval(Height::MIN)
             // Removes default Testnet activation heights if not configured,
@@ -732,6 +748,7 @@ impl Parameters {
             post_nu6_funding_streams,
             target_difficulty_limit,
             disable_pow,
+            disable_subsidy,
             should_allow_unshielded_coinbase_spends,
             pre_blossom_halving_interval,
             post_blossom_halving_interval,
@@ -745,6 +762,7 @@ impl Parameters {
             && self.post_nu6_funding_streams == post_nu6_funding_streams
             && self.target_difficulty_limit == target_difficulty_limit
             && self.disable_pow == disable_pow
+            && self.disable_subsidy == disable_subsidy
             && self.should_allow_unshielded_coinbase_spends
                 == should_allow_unshielded_coinbase_spends
             && self.pre_blossom_halving_interval == pre_blossom_halving_interval
@@ -801,6 +819,11 @@ impl Parameters {
         self.disable_pow
     }
 
+    /// Returns true if block subsidies should be disabled for this network
+    pub fn disable_subsidy(&self) -> bool {
+        self.disable_subsidy
+    }
+
     /// Returns true if this network should allow transactions with transparent outputs
     /// that spend coinbase outputs.
     pub fn should_allow_unshielded_coinbase_spends(&self) -> bool {
@@ -837,6 +860,14 @@ impl Network {
         }
     }
 
+    /// Returns true if block subsidies should be disabled for this network
+    pub fn disable_subsidy(&self) -> bool {
+        if let Self::Testnet(params) = self {
+            params.disable_subsidy()
+        } else {
+            false
+        }
+    }
     /// Returns slow start interval for this network
     pub fn slow_start_interval(&self) -> Height {
         if let Self::Testnet(params) = self {

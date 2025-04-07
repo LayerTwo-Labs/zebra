@@ -65,6 +65,10 @@ pub fn block_subsidy(
     height: Height,
     network: &Network,
 ) -> Result<Amount<NonNegative>, SubsidyError> {
+    if network.disable_subsidy() {
+        return Ok(Amount::zero());
+    }
+
     let blossom_height = Blossom
         .activation_height(network)
         .expect("blossom activation height should be available");
