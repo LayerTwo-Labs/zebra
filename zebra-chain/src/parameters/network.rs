@@ -128,10 +128,9 @@ impl std::fmt::Debug for Network {
                 .debug_struct("Regtest")
                 .field("activation_heights", params.activation_heights())
                 .finish(),
-            Self::Testnet(params) if params.is_default_testnet() => {
+            Self::Testnet(_) => {
                 write!(f, "{self}")
             }
-            Self::Testnet(params) => f.debug_tuple("ConfiguredTestnet").field(params).finish(),
         }
     }
 }
