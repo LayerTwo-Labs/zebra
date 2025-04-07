@@ -82,7 +82,7 @@ use tokio::{pin, select, sync::oneshot};
 use tower::{builder::ServiceBuilder, util::BoxService, ServiceExt};
 use tracing_futures::Instrument;
 
-use zebra_chain::block::genesis::regtest_genesis_block;
+use zebra_chain::block::genesis::{regtest_genesis_block, testnet_genesis_block};
 use zebra_consensus::{router::BackgroundTaskHandles, ParameterCheckpoint};
 use zebra_rpc::server::RpcServer;
 
@@ -372,6 +372,40 @@ impl StartCmd {
         );
 
         info!("spawning syncer task");
+
+        // This is a bit strange. By default, the testnet genesis block is not included in Zebra,
+        // the way the regtest genesis block is. Instead, Zebra tries to download the testnet genesis
+        // block from its peers. If there are no peers, the block is never downloaded (obviously!).
+        // However, the internal miner refuses to start before the chain tip is synced, and the
+        // chain tip never advances if the genesis block is not downloaded. Result: without us manually
+        // adding the testnet genesis block here, we're stuck with no mining. Perhaps we're doing
+        // something wrong? Anyways, this fixes it.
+        let has_default_testnet_genesis_hash = config.network.network.genesis_hash()
+            == zebra_chain::block::genesis::testnet_genesis_block().hash();
+
+        if has_default_testnet_genesis_hash {
+            if !syncer
+                .state_contains(config.network.network.genesis_hash())
+                .await?
+            {
+                info!("submitting hard-coded testnet genesis block to block verifier");
+
+                let genesis_hash = block_verifier_router
+                    .clone()
+                    .oneshot(zebra_consensus::Request::Commit(testnet_genesis_block()))
+                    .await
+                    .expect("should validate Testnet genesis block");
+
+                assert_eq!(
+                    genesis_hash,
+                    config.network.network.genesis_hash(),
+                    "validated block hash should match network genesis hash"
+                )
+            } else {
+                info!("testnet genesis block already in state");
+            }
+        }
+
         let syncer_task_handle = if is_regtest {
             if !syncer
                 .state_contains(config.network.network.genesis_hash())
