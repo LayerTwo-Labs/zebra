@@ -35,7 +35,8 @@ jobs:
     name: Checks changed-files
     outputs:
       rust: ${{ steps.changed-files-rust.outputs.any_changed == 'true' }}
-      workflows: ${{ steps.changed-files-workflows.outputs.any_changed == 'true' }}
+      workflows:
+        ${{ steps.changed-files-workflows.outputs.any_changed == 'true' }}
     steps:
       - uses: actions/checkout@v4.2.2
         with:
@@ -77,7 +78,7 @@ jobs:
         uses: arduino/setup-protoc@v3.0.0
         with:
           # TODO: increase to latest version after https://github.com/arduino/setup-protoc/issues/33 is fixed
-          version: '23.x'
+          version: "23.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check workflow permissions
@@ -109,7 +110,8 @@ jobs:
 
       - name: Run clippy manually without annotations
         if: ${{ !steps.check_permissions.outputs.has-permission }}
-        run: cargo clippy --workspace --all-features --all-targets -- -D warnings
+        run:
+          cargo clippy --workspace --all-features --all-targets -- -D warnings
 
   fmt:
     name: Rustfmt
@@ -128,7 +130,7 @@ jobs:
         uses: arduino/setup-protoc@v3.0.0
         with:
           # TODO: increase to latest version after https://github.com/arduino/setup-protoc/issues/33 is fixed
-          version: '23.x'
+          version: "23.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Setup Rust with stable toolchain and default profile
