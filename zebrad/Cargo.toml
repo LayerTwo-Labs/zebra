@@ -245,6 +245,9 @@ proptest-derive = { workspace = true, optional = true }
 
 # test feature tokio-console
 console-subscriber = { workspace = true, optional = true }
+tonic.workspace = true
+prost.workspace = true
+prost-types = "0.13.5"
 
 [build-dependencies]
 vergen = { workspace = true, features = ["cargo", "git", "git2", "rustc"] }
