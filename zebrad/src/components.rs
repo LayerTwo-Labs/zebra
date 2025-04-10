@@ -19,5 +19,7 @@ pub mod tracing;
 #[cfg(feature = "internal-miner")]
 pub mod miner;
 
+pub mod mainchain;
+
 pub use inbound::Inbound;
 pub use sync::ChainSync;
