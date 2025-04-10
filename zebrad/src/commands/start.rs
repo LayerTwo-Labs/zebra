@@ -82,6 +82,7 @@ use tokio::{pin, select, sync::oneshot};
 use tower::{builder::ServiceBuilder, util::BoxService, ServiceExt};
 use tracing_futures::Instrument;
 
+use crate::components::mainchain::{MainchainEnforcerClient, THIS_SIDECHAIN};
 use zebra_chain::block::genesis::{regtest_genesis_block, testnet_genesis_block};
 use zebra_consensus::{router::BackgroundTaskHandles, ParameterCheckpoint};
 use zebra_rpc::server::RpcServer;
@@ -428,6 +429,18 @@ impl StartCmd {
         } else {
             tokio::spawn(syncer.sync().in_current_span())
         };
+
+        info!("initializing mainchain client");
+        let mainchain_client = MainchainEnforcerClient::new(config.mainchain.enforcer_addr).await?;
+
+        let sidechains = mainchain_client.get_sidechains().await?;
+        if !sidechains
+            .iter()
+            .any(|sidechain| sidechain.sidechain_number == Some(THIS_SIDECHAIN))
+        {
+            // TODO: should we return an error here?
+            warn!("sidechain slot ({THIS_SIDECHAIN}) not in list of active chains");
+        }
 
         // And finally, spawn the internal Zcash miner, if it is enabled.
         //
