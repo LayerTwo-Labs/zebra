@@ -526,7 +526,14 @@ fn ephemeral(cache_dir_config: EphemeralConfig, cache_dir_check: EphemeralCheck)
                 ignored_cache_dir.read_dir().unwrap().collect::<Vec<_>>()
             );
 
-            ["state", "network", "zebrad.toml"].iter()
+            [
+                "state",
+                "network",
+                "zebrad.toml",
+                "bitcoind-data",
+                "enforcer-data",
+            ]
+            .iter()
         }
 
         // we didn't create the state directory, so it should not exist
@@ -544,7 +551,7 @@ fn ephemeral(cache_dir_config: EphemeralConfig, cache_dir_check: EphemeralCheck)
                 ignored_cache_dir.read_dir().unwrap().collect::<Vec<_>>()
             );
 
-            ["network", "zebrad.toml"].iter()
+            ["network", "zebrad.toml", "bitcoind-data", "enforcer-data"].iter()
         }
     };
 
@@ -626,19 +633,26 @@ fn version_args() -> Result<()> {
 /// cache conflicts.
 #[test]
 fn config_tests() -> Result<()> {
+    println!("valid_generated_config");
     valid_generated_config("start", "Starting zebrad")?;
 
     // Check what happens when Zebra parses an invalid config
+    println!("invalid_generated_config");
     invalid_generated_config()?;
 
     // Check that we have a current version of the config stored
     #[cfg(not(target_os = "windows"))]
-    last_config_is_stored()?;
+    {
+        println!("last_config_is_stored");
+        last_config_is_stored()?;
+    }
 
     // Check that Zebra's previous configurations still work
+    println!("stored_configs_work");
     stored_configs_work()?;
 
     // We run the `zebrad` app test after the config tests, to avoid potential port conflicts
+    println!("app_no_args");
     app_no_args()?;
 
     Ok(())
