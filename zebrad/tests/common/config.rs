@@ -18,12 +18,27 @@ use tempfile::TempDir;
 use zebra_chain::parameters::Network;
 use zebra_test::{command::TestChild, net::random_known_port};
 use zebrad::{
-    components::{mempool, sync, tracing},
+    components::{mainchain, mempool, sync, tracing},
     config::ZebradConfig,
 };
 
 use crate::common::cached_state::DATABASE_FORMAT_CHECK_INTERVAL;
 
+pub struct EnforcerConfig {
+    pub enforcer_rpc_addr: SocketAddr,
+    pub bitcoind_rpc_addr: SocketAddr,
+    pub bitcoind_listen_addr: SocketAddr,
+    pub bitcoind_zmq_addr: SocketAddr,
+}
+
+pub fn new_enforcer_config(zebrad_config: ZebradConfig) -> Result<EnforcerConfig> {
+    Ok(EnforcerConfig {
+        enforcer_rpc_addr: zebrad_config.mainchain.enforcer_addr,
+        bitcoind_rpc_addr: format!("127.0.0.1:{}", random_known_port()).parse()?,
+        bitcoind_listen_addr: format!("127.0.0.1:{}", random_known_port()).parse()?,
+        bitcoind_zmq_addr: format!("127.0.0.1:{}", random_known_port()).parse()?,
+    })
+}
 /// Returns a config with:
 /// - a Zcash listener on an unused port on IPv4 localhost, and
 /// - an ephemeral state,
@@ -64,6 +79,10 @@ pub fn default_test_config(net: &Network) -> Result<ZebradConfig> {
     let mut state = zebra_state::Config::ephemeral();
     state.debug_validity_check_interval = Some(DATABASE_FORMAT_CHECK_INTERVAL);
 
+    let mainchain = mainchain::Config {
+        enforcer_addr: format!("127.0.0.1:{}", random_known_port()).parse()?,
+    };
+
     // These are the ZF funding stream addresses for mainnet and testnet.
     #[allow(unused_mut)]
     let mut mining = zebra_rpc::config::mining::Config::default();
@@ -88,6 +107,7 @@ pub fn default_test_config(net: &Network) -> Result<ZebradConfig> {
         consensus,
         tracing,
         mining,
+        mainchain,
         ..ZebradConfig::default()
     })
 }
