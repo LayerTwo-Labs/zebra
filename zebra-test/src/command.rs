@@ -8,6 +8,7 @@ use std::{
     path::Path,
     process::{Child, Command, ExitStatus, Output, Stdio},
     time::{Duration, Instant},
+    vec,
 };
 
 #[cfg(unix)]
@@ -94,6 +95,8 @@ impl CommandExt for Command {
     /// reports using the original `command_path`
     fn spawn2<T>(&mut self, dir: T, command_path: impl ToString) -> Result<TestChild<T>, Report> {
         let command_and_args = format!("{self:?}");
+
+        tracing::debug!("spawning: {}", command_and_args);
         let child = self.spawn();
 
         let child = child
@@ -105,6 +108,7 @@ impl CommandExt for Command {
             cmd: command_and_args,
             command_path: command_path.to_string(),
             child: Some(child),
+            sidecars: vec![],
             stdout: None,
             stderr: None,
             failure_regexes: RegexSet::empty(),
@@ -143,12 +147,15 @@ where
     ) -> Result<TestChild<Self>> {
         let mut cmd = test_cmd(command_path, self.as_ref())?;
 
-        Ok(cmd
+        let child = cmd
             .args(args.into_arguments())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn2(self, command_path)
-            .unwrap())
+            .unwrap();
+
+        TestChild::<T>::write_to_test_logs(format!("spawned `{cmd:?}`"), false);
+        Ok(child)
     }
 }
 
@@ -201,6 +208,9 @@ pub struct TestChild<T> {
     /// `None` when the command has been waited on,
     /// and its output has been taken.
     pub child: Option<Child>,
+
+    /// The sidecar processes.
+    pub sidecars: Vec<(String, Child)>,
 
     /// The standard output stream of the child process.
     ///
@@ -493,6 +503,22 @@ impl<T> TestChild<T> {
     /// processes that have panicked. See #1781.
     #[spandoc::spandoc]
     pub fn kill(&mut self, ignore_exited: bool) -> Result<()> {
+        // Make sure to kill all sidecars first
+        for (name, sidecar) in self.sidecars.iter_mut() {
+            Self::write_to_test_logs(
+                format!("killing sidecar `{}` (pid: {})", name, sidecar.id()),
+                self.bypass_test_capture,
+            );
+            sidecar
+                .kill()
+                .map_err(|err| eyre!("failed to kill sidecar `{}`: {}", name, err))?;
+
+            Self::write_to_test_logs(
+                format!("sidecar `{}` killed", name),
+                self.bypass_test_capture,
+            );
+        }
+
         let child = match self.child.as_mut() {
             Some(child) => child,
             None if ignore_exited => {

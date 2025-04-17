@@ -8,13 +8,17 @@
 use std::{
     env,
     fmt::Debug,
+    fs,
     net::SocketAddr,
+    net::TcpStream,
     path::{Path, PathBuf},
+    thread,
     time::Duration,
 };
 
 use tempfile::TempDir;
 
+use color_eyre::eyre::eyre;
 use zebra_chain::parameters::Network::{self, *};
 use zebra_network::CacheDir;
 use zebra_test::{
@@ -25,9 +29,13 @@ use zebra_test::{
 use zebrad::config::ZebradConfig;
 
 use crate::common::{
-    config::testdir, lightwalletd::zebra_skip_lightwalletd_tests,
-    sync::FINISH_PARTIAL_SYNC_TIMEOUT, test_type::TestType,
+    config::{testdir, EnforcerConfig},
+    lightwalletd::zebra_skip_lightwalletd_tests,
+    sync::FINISH_PARTIAL_SYNC_TIMEOUT,
+    test_type::TestType,
 };
+
+use super::config::new_enforcer_config;
 
 /// After we launch `zebrad`, wait this long for the command to start up,
 /// take the actions expected by the tests, and log the expected logs.
@@ -118,14 +126,124 @@ where
     fn write_config_helper(self, config: &ZebradConfig) -> Result<Self>;
 }
 
+// TODO: need a way to not pollute stderr. Only dump if test failed,
+// or something along those lines? Should be possible.
+fn spawn_process(
+    command_path: &str,
+    test_dir_path: &Path,
+    args: Arguments,
+) -> Result<std::process::Child> {
+    let mut cmd = zebra_test::command::test_cmd(command_path, test_dir_path)?;
+    cmd.args(args.into_arguments());
+
+    let child = cmd
+        .spawn()
+        .map_err(|err| eyre!("failed to spawn process `{}`: {}", command_path, err))?;
+
+    Ok(child)
+}
+
+/// Spawns an enforcer (e.g., bitcoind) instance as a helper.
+// This function is defined outside the impl block as it's a helper, not part of the trait.
+fn spawn_bitcoind(test_dir_path: &Path, config: &EnforcerConfig) -> Result<std::process::Child> {
+    let bitcoind_dir = test_dir_path.join("bitcoind-data");
+
+    fs::create_dir_all(&bitcoind_dir)?;
+
+    let args = args!(
+        format!("-bind={}", config.bitcoind_listen_addr),
+        format!("-datadir={}", bitcoind_dir.display()),
+        "-signetblocktime=60",
+        "-signetchallenge=00141551188e5153533b4fdd555449e640d9cc129456",
+        "-regtest",
+        "-rpcuser=user",
+        "-rpcpassword=password",
+        format!("-rpcport={}", config.bitcoind_rpc_addr.port()),
+        format!("-zmqpubsequence=tcp://{}", config.bitcoind_zmq_addr),
+    );
+
+    let bitcoind_path = std::env::var("BITCOIND_EXE_PATH").unwrap_or("bitcoind".to_string());
+
+    spawn_process(&bitcoind_path, test_dir_path, args)
+}
+
+fn spawn_enforcer(test_dir_path: &Path, config: &EnforcerConfig) -> Result<std::process::Child> {
+    let enforcer_dir = test_dir_path.join("enforcer-data");
+
+    fs::create_dir_all(&enforcer_dir)?;
+
+    let args = args!(
+        format!("--data-dir={}", enforcer_dir.display()),
+        format!("--serve-grpc-addr={}", config.enforcer_rpc_addr),
+        format!("--node-rpc-addr={}", config.bitcoind_rpc_addr),
+        "--node-rpc-user=user",
+        "--node-rpc-pass=password",
+        format!(
+            "--node-zmq-addr-sequence=tcp://{}",
+            config.bitcoind_zmq_addr
+        ),
+        "--enable-wallet",
+        "--wallet-auto-create",
+        // avoid the need for a esplora/electrum server as well, complicating this
+        // even further
+        "--wallet-sync-source=disabled",
+    );
+
+    let enforcer_path =
+        std::env::var("ENFORCER_EXE_PATH").unwrap_or("bip300301_enforcer".to_string());
+
+    spawn_process(&enforcer_path, test_dir_path, args)
+}
+
+fn read_config(dir: &Path) -> Result<ZebradConfig> {
+    let config_file = dir.join("zebrad.toml");
+    let raw_config = fs::read_to_string(config_file.clone()).map_err(|e| {
+        eyre!(
+            "failed to read config file `{}`: {}",
+            config_file.display(),
+            e
+        )
+    })?;
+    let config = toml::from_str(&raw_config)?;
+    Ok(config)
+}
+
+fn wait_for_port_open(addr: SocketAddr) -> Result<()> {
+    let wait_time = Duration::from_millis(100);
+    let total_wait_time = Duration::from_secs(10);
+    let start_time = std::time::Instant::now();
+
+    loop {
+        match TcpStream::connect_timeout(&addr, wait_time) {
+            Ok(_) => return Ok(()), // Connection successful
+            Err(e)
+                if e.kind() == std::io::ErrorKind::TimedOut
+                    || e.kind() == std::io::ErrorKind::ConnectionRefused =>
+            {
+                // Timeout or connection refused, continue trying
+                if start_time.elapsed() > total_wait_time {
+                    return Err(eyre!(
+                        "timed out waiting for port {} to open after {:?}",
+                        addr,
+                        total_wait_time
+                    ));
+                }
+                thread::sleep(wait_time);
+            }
+            Err(e) => return Err(eyre!("failed to connect to {}: {}", addr, e)), // Other error
+        }
+    }
+}
+
 impl<T> ZebradTestDirExt for T
 where
     Self: TestDirExt + AsRef<Path> + Sized,
 {
     #[allow(clippy::unwrap_in_result)]
     fn spawn_child(self, extra_args: Arguments) -> Result<TestChild<Self>> {
-        let dir = self.as_ref();
-        let default_config_path = dir.join("zebrad.toml");
+        let self_dir = self.as_ref();
+
+        let default_config_path = self_dir.join("zebrad.toml");
         let mut args = Arguments::new();
 
         if default_config_path.exists() {
@@ -140,7 +258,66 @@ where
 
         args.merge_with(extra_args);
 
-        self.spawn_child_with_command(env!("CARGO_BIN_EXE_zebrad"), args)
+        // Only muck around with bitcoind/the enforcer if we're
+        // actually starting zebra
+
+        let mut sidecars = Vec::new();
+
+        let is_start = !args
+            .clone()
+            .into_arguments()
+            .collect::<Vec<_>>()
+            .iter()
+            // This is kinda cooky. "start" is the default subcommand, so we
+            // instead need to check that we're not doing any non-start subcommands.
+            .any(|arg| ["copy-state", "generate", "tip-height", "help"].contains(&arg.as_str()));
+
+        // Some tests create an invalid config on purpose. We therefore have to
+        // tolerate this here, without failing the setup.
+        let (has_valid_config, zebra_config) =
+            read_config(self_dir).map_or((false, ZebradConfig::default()), |config| (true, config));
+
+        // Some tests spin up two zebra instances with the same state dir. That means multiple
+        // attempts at spinning up Core, and the second one will fail. Check if Core is already
+        // running from this test directory, and if so don't spawn the sidecars.
+
+        let core_is_running = self_dir
+            .join("bitcoind-data")
+            .join("regtest")
+            .join(".lock")
+            .exists();
+
+        if is_start && has_valid_config && !core_is_running {
+            // It's only after this that we know the RPC address for the enforcer,
+            // which we then need to feed into zebra.... Aaaaaah
+            let enforcer_config = new_enforcer_config(zebra_config)?;
+
+            // We first need to spawn bitcoin core
+            let bitcoind_handle = spawn_bitcoind(self.as_ref(), &enforcer_config)?;
+
+            // Wait for bitcoin core to be ready
+            wait_for_port_open(enforcer_config.bitcoind_rpc_addr)?;
+
+            // Then the enforcer
+            let enforcer_handle = spawn_enforcer(self.as_ref(), &enforcer_config)?;
+
+            // Wait for the enforcer to be ready
+            wait_for_port_open(enforcer_config.enforcer_rpc_addr)?;
+
+            sidecars.push(("bitcoind".to_string(), bitcoind_handle));
+            sidecars.push(("enforcer".to_string(), enforcer_handle));
+        }
+
+        // Then spawn zebrad
+
+        let mut zebrad_child: TestChild<Self> =
+            self.spawn_child_with_command(env!("CARGO_BIN_EXE_zebrad"), args)?;
+
+        for sidecar in sidecars {
+            zebrad_child.sidecars.push(sidecar);
+        }
+
+        Ok(zebrad_child)
     }
 
     fn with_config(self, config: &mut ZebradConfig) -> Result<Self> {

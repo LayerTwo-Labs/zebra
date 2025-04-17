@@ -526,7 +526,14 @@ fn ephemeral(cache_dir_config: EphemeralConfig, cache_dir_check: EphemeralCheck)
                 ignored_cache_dir.read_dir().unwrap().collect::<Vec<_>>()
             );
 
-            ["state", "network", "zebrad.toml"].iter()
+            [
+                "state",
+                "network",
+                "zebrad.toml",
+                "bitcoind-data",
+                "enforcer-data",
+            ]
+            .iter()
         }
 
         // we didn't create the state directory, so it should not exist
@@ -544,7 +551,7 @@ fn ephemeral(cache_dir_config: EphemeralConfig, cache_dir_check: EphemeralCheck)
                 ignored_cache_dir.read_dir().unwrap().collect::<Vec<_>>()
             );
 
-            ["network", "zebrad.toml"].iter()
+            ["network", "zebrad.toml", "bitcoind-data", "enforcer-data"].iter()
         }
     };
 

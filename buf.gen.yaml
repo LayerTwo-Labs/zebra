@@ -1,0 +1,27 @@
+version: v2
+managed:
+  enabled: true
+
+# Note: order here matters! neoeinstein-tonic must run /after/ neoeinstein-prost
+plugins:
+  - remote: buf.build/community/neoeinstein-prost:v0.4.0
+    out: zebrad/src/components/mainchain/gen
+
+  - remote: buf.build/community/neoeinstein-tonic:v0.4.1
+    out: zebrad/src/components/mainchain/gen
+    opt:
+      - compile_well_known_types
+      - extern_path=.google.protobuf=::pbjson_types
+      - no_server
+
+  - remote: buf.build/community/neoeinstein-prost-crate:v0.4.1
+    out: zebrad/src/components/mainchain/gen
+    opt:
+      - no_features
+
+inputs:
+  - git_repo: https://github.com/LayerTwo-Labs/cusf_sidechain_proto
+    ref: 75a9ecc # master as of 2025-04-09
+    subdir: proto
+    paths:
+      - cusf/mainchain/v1
