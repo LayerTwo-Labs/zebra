@@ -154,7 +154,7 @@ where
             .spawn2(self, command_path)
             .unwrap();
 
-        TestChild::<T>::write_to_test_logs(&format!("spawned `{cmd:?}`"), false);
+        TestChild::<T>::write_to_test_logs(format!("spawned `{cmd:?}`"), false);
         Ok(child)
     }
 }
