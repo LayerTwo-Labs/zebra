@@ -119,6 +119,23 @@ jobs:
           echo "PROPTEST_CASES=1" >> $GITHUB_ENV
           echo "PROPTEST_MAX_SHRINK_ITERS=1024" >> $GITHUB_ENV
 
+      - name: Download Bitcoin Core and bip300301_enforcer
+        shell: bash
+        run: | 
+          dir_name="bip300301-enforcer-latest-x86_64-unknown-linux-gnu"
+
+          wget https://releases.drivechain.info/$dir_name.zip
+          unzip $dir_name.zip
+          chmod +x $dir_name/bip300301-enforcer-latest-x86_64-unknown-linux-gnu
+          echo "ENFORCER_EXE_PATH=$PWD/$dir_name/bip300301-enforcer-latest-x86_64-unknown-linux-gnu" >> $GITHUB_ENV
+
+          dir_name="L1-bitcoin-patched-latest-x86_64-unknown-linux-gnu"
+          wget https://releases.drivechain.info/$dir_name.zip
+          unzip $dir_name.zip
+
+          chmod +x $dir_name/bitcoind
+          echo "BITCOIND_EXE_PATH=$PWD/$dir_name/bitcoind" >> $GITHUB_ENV
+
       # Run unit and basic acceptance tests, only showing command output if the test fails.
       #
       # If some tests hang, add "-- --nocapture" for just that test, or for all the tests.
