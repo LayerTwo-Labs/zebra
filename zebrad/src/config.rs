@@ -48,6 +48,9 @@ pub struct ZebradConfig {
     /// Mempool configuration
     pub mempool: crate::components::mempool::Config,
 
+    /// Mainchain configuration
+    pub mainchain: crate::components::mainchain::Config,
+
     /// RPC configuration
     pub rpc: zebra_rpc::config::Config,
 
